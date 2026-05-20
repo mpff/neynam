@@ -68,3 +68,154 @@ any sensible routine. Promising avenues to explore:
 5. **Frequency / smoothness regularization on $f_1$.** Spectral-norm
    caps, Fourier-feature input encodings, or output L2 on $f_k''$. Not
    "the answer" but useful baselines to beat.
+
+---
+
+## Appendix: optimization geometry of NAMs
+
+### A.1 Population objective and the additive fixed point
+
+Write $X = (X_1, \dots, X_K)$ with joint law $P$ and define the Hilbert
+space $\mathcal{H} = L^2(P_X)$. Let
+$\mathcal{H}_k = \{ g \in L^2(P_{X_k}) : \mathbb{E}[g(X_k)] = 0 \}$ be the
+mean-zero functions of $X_k$ alone, embedded in $\mathcal{H}$. The
+**additive subspace** is
+
+$$
+\mathcal{H}_{\mathrm{add}} \;=\; \mathbb{R} \,\oplus\, \mathcal{H}_1 \oplus \cdots \oplus \mathcal{H}_K
+\;\;\subseteq\;\; \mathcal{H},
+$$
+
+which is a closed linear subspace. The population risk
+$L(c, f) = \mathbb{E}\!\left[(Y - c - \sum_k f_k(X_k))^2\right]$ is
+minimized by the orthogonal projection
+$\Pi_{\mathrm{add}} Y = c^\star + \sum_k f_k^\star$, unique whenever
+$\mathcal{H}_{\mathrm{add}}$ is closed in $\mathcal{H}$ — equivalently,
+whenever no $\mathcal{H}_k$ is a perfect linear function of the others
+(Stone, 1985; Buja–Hastie–Tibshirani, 1989).
+
+The Gâteaux derivative of $L$ at $(c, f)$ along $h_k \in \mathcal{H}_k$ is
+
+$$
+DL[(c, f)](h_k) \;=\; -\,2 \,\mathbb{E}\big[ r(X) \, h_k(X_k) \big],
+\qquad
+r(X) \;=\; Y - c - \sum_j f_j(X_j).
+$$
+
+Vanishing for all $h_k$ is equivalent to the **normal equations**
+
+$$
+\mathbb{E}[\,r(X) \mid X_k\,] \;=\; 0 \quad \forall k. \tag{$\star$}
+$$
+
+Equation $(\star)$ is the fixed point shared by all three algorithms
+below.
+
+### A.2 Three algorithms for $(\star)$
+
+Let $P_k : \mathcal{H} \to \mathcal{H}_k$ denote the conditional-expectation
+projector $P_k g = \mathbb{E}[g \mid X_k] - \mathbb{E}[g]$.
+
+**(i) Backfitting.** Cyclic exact coordinate descent on $\mathcal{H}_{\mathrm{add}}$:
+
+$$
+f_k \;\leftarrow\; P_k \!\left( Y - c - \sum_{j \neq k} f_j(X_j) \right).
+$$
+
+Each sweep is an alternating-projection step; convergence to $(\star)$
+is geometric with rate
+$\rho_{\mathrm{back}} = \prod_{k} \|P_k P_{k-1} \cdots P_1\| < 1$
+whenever the $\mathcal{H}_k$ are not collinear (Hastie–Tibshirani, 1990).
+
+**(ii) Classic SGD on a parametric NAM.** With
+$f_k = f_k(\cdot; \theta_k)$:
+
+$$
+\theta_k \;\leftarrow\; \theta_k \;+\; \frac{2\eta}{|\mathcal{B}|}
+\sum_{i \in \mathcal{B}} r_i \, \nabla_{\theta_k} f_k(X_{i,k}; \theta_k).
+$$
+
+The gradient direction depends on the *current* residual $r_i$, which
+mixes the errors of all other components. Define the nuisance error
+$\delta_j = f_j - f_j^\star$ — then for $j \neq k$,
+
+$$
+\mathbb{E}\big[r \nabla_{\theta_k} f_k \mid \delta\big]
+\;=\; \underbrace{\mathbb{E}\!\left[(Y - c^\star - \textstyle\sum_l f_l^\star) \nabla_{\theta_k} f_k\right]}_{=\,0}
+\;-\; \sum_{j \neq k} \mathbb{E}\big[ \delta_j(X_j) \, \nabla_{\theta_k} f_k(X_k) \big].
+$$
+
+The second term is the **plug-in bias**: order $O(\|\delta\|)$ whenever
+$\mathbb{E}[\delta_j(X_j) \, \nabla_{\theta_k} f_k(X_k)] \neq 0$, which
+happens exactly under concurvity ($X_j \not\!\perp X_k$). Plain SGD does
+not "see" $(\star)$ as the unique attractor.
+
+**(iii) Neyman-orthogonal score.** Replace the per-component score
+direction by its projection onto the orthocomplement of the nuisance
+tangent space. For NAMs the nuisance tangent is spanned by gradients of
+the other components; the orthogonalized residual is
+
+$$
+\tilde r \;=\; r \;-\; \Pi_{\,\mathrm{span}\{ \nabla_{\theta_j} f_j : j \neq k\}} \, r,
+$$
+
+and the update uses $\tilde r$ in place of $r$. This yields a score whose
+first-order bias in $\delta$ *vanishes*:
+
+$$
+\mathbb{E}\big[\tilde r \, \nabla_{\theta_k} f_k \mid \delta\big]
+\;=\; O\big(\|\delta\|^2\big),
+$$
+
+the **Neyman near-orthogonality** that gives debiased machine learning
+its $\sqrt{n}$ rate even with $n^{-1/4}$ nuisance estimation
+(Chernozhukov et al., 2018).
+
+### A.3 At the fixed point all three coincide
+
+At $(\star)$ the residual $r^\star$ is orthogonal to every
+$\mathcal{H}_j$, hence in particular to every $\nabla_{\theta_j} f_j$ in
+its tangent. Then $\tilde r^\star = r^\star$, the conditional projection
+$P_k r^\star = 0$, and the SGD gradient equals the backfitting update
+equals the Neyman score — they differ only in the **transient**.
+
+### A.4 Concurvity and the transient
+
+Concurvity controls how aggressively the three transients diverge.
+Quantitatively: if
+$\rho := \max_{k \neq j} \|P_k P_j\| \in [0, 1)$,
+then backfitting's per-sweep contraction is at least $1 - (1 - \rho)^K$,
+and the SGD plug-in bias scales like $\rho \, \|\delta\|$. For our DGP
+($\rho_{\text{Pearson}}(X_1, X_2) \approx 0.68$ under a Gaussian copula,
+$f_1$ high-frequency so $\|\delta_1\|$ stays large for many steps), the
+transient is long enough that the three algorithms produce visibly
+different per-epoch curves at small $n$ — which is exactly the regime
+where the autoresearch loop has room to find improvements.
+
+### A.5 What the loop is searching for
+
+A per-step routine $R_k(\nabla_{\theta_k} L_n, \text{state})$ such that
+
+1. **At the fixed point**: $R_k$ reduces to SGD (no overhead once the
+   nuisance is well-fit).
+2. **Far from the fixed point**: $R_k$'s expected update has bias
+   $O(\|\delta\|^2)$ instead of $O(\|\delta\|)$ — the Neyman property.
+3. **Per-step cost**: $O(1)$ extra over SGD; no inner backfitting loop
+   per step.
+
+The directions in §"Directions" each correspond to a specific way to
+approximate (iii) cheaply: cyclic mini-backfitting trades (3) for (2);
+gradient orthogonalization is (iii) literally but needs cheap basis
+estimation; functional momentum approximates the conditional-expectation
+projector by an EMA of $f_k$ outputs.
+
+### A.6 References
+
+- Buja, A., Hastie, T., Tibshirani, R. (1989). *Linear smoothers and
+  additive models.* Ann. Statist. 17(2): 453–510.
+- Chernozhukov, V. et al. (2018). *Double/debiased machine learning for
+  treatment and structural parameters.* Econom. J. 21(1): C1–C68.
+- Hastie, T., Tibshirani, R. (1990). *Generalized Additive Models.*
+  Chapman & Hall.
+- Stone, C. J. (1985). *Additive regression and other nonparametric
+  models.* Ann. Statist. 13(2): 689–705.
