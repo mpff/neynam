@@ -10,7 +10,6 @@ fresh model per (n, seed), and report mean log10 MSPE across all
 """
 from __future__ import annotations
 
-import json
 import math
 from pathlib import Path
 
@@ -28,8 +27,10 @@ MU_TRUE = 1.0 / 3.0  # E[y] for the DGP in `simulate`
 RHO = 0.7            # Gaussian-copula correlation between x1 and x2 (concurvity)
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-HERE = Path(__file__).parent
-HP_PATH = HERE / "hp_defaults.json"
+# Baseline HPs — classic SGD + cosine LR + early stopping on val y-MSE.
+# A wider sweep ({3e-2, 1e-1, 3e-1, 1.0} × {wd 0, 1e-4} across N_GRID)
+# found lr=0.1 (no weight decay) dominant at every n; constants below.
+HP_DEFAULTS = {"lr": 1e-1, "max_epochs": 500, "patience": 20, "batch_size": 128}
 
 
 def simulate(n: int, seed: int):
@@ -158,24 +159,9 @@ class CurveLogger:
         self.close()
 
 
-def load_hp_defaults() -> dict:
-    return json.loads(HP_PATH.read_text()) if HP_PATH.exists() else {}
-
-
 def hp_for(n: int) -> dict:
-    """HP defaults for a given training-set size.
-
-    Falls back to the nearest-n key in `hp_defaults.json`. If no defaults
-    file exists, returns a conservative built-in.
-    """
-    defaults = load_hp_defaults()
-    if defaults:
-        if str(n) in defaults:
-            return dict(defaults[str(n)])
-        keys = sorted(int(k) for k in defaults)
-        nearest = min(keys, key=lambda k: abs(k - n))
-        return dict(defaults[str(nearest)])
-    return {"lr": 1e-1, "max_epochs": 500, "patience": 20, "batch_size": 128}
+    """HP defaults for a given training-set size — currently constant."""
+    return dict(HP_DEFAULTS)
 
 
 def aggregate(results: list[dict]):
