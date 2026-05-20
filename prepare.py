@@ -2,7 +2,8 @@
 
 DO NOT EDIT during the autoresearch loop. Defines the fixed pieces of the
 benchmark: data generating process, training-size grid, evaluation
-protocol, scoring, and HP defaults loaded from `hp_defaults.json`.
+protocol, scoring, baseline HP defaults (`HP_DEFAULTS`), and the
+per-epoch `CurveLogger`.
 
 Convergence-style evaluation: we sweep `n` over a geometric grid, train a
 fresh model per (n, seed), and report mean log10 MSPE across all
@@ -30,7 +31,7 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # Baseline HPs — classic SGD + cosine LR + early stopping on val y-MSE.
 # A wider sweep ({3e-2, 1e-1, 3e-1, 1.0} × {wd 0, 1e-4} across N_GRID)
 # found lr=0.1 (no weight decay) dominant at every n; constants below.
-HP_DEFAULTS = {"lr": 1e-1, "max_epochs": 500, "patience": 20, "batch_size": 128}
+HP_DEFAULTS = {"lr": 1e-1, "max_epochs": 500, "patience": 100, "batch_size": 128}
 
 
 def simulate(n: int, seed: int):
