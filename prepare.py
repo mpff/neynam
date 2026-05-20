@@ -228,6 +228,42 @@ def worst_log_ratio(mspe_by_n_k, intercept_by_n, baseline=BASELINE_CURVE):
     return max(ratios)
 
 
+def area_score(mspe_by_n_k, intercept_by_n, baseline=BASELINE_CURVE):
+    """Curve-area score: trapezoidal integral of
+    log10(routine_mean / baseline_mean) over log10(n), summed across
+    the three metric curves (f0 MSPE, f1 MSPE, μ MSE).
+
+    Negative ⟺ routine has less aggregate log-area than baseline on
+    average across the n grid; one noisy cell can be offset by gains
+    elsewhere. Returns (total, per_metric) where per_metric is
+    {"f0": area, "f1": area, "mu": area}.
+    """
+    n_vals = sorted({n for (n, _) in mspe_by_n_k})
+    log_n = [math.log10(n) for n in n_vals]
+
+    def trapz(ys, xs):
+        return sum(0.5 * (ys[i] + ys[i + 1]) * (xs[i + 1] - xs[i])
+                   for i in range(len(xs) - 1))
+
+    per_metric: dict[str, float] = {}
+    for k in (0, 1):
+        diff = []
+        for n in n_vals:
+            ms = mspe_by_n_k[(n, k)]
+            m = sum(ms) / len(ms)
+            b = baseline["mspe"][n][k]
+            diff.append(math.log10(max(m, EPS_LOG) / max(b, EPS_LOG)))
+        per_metric[f"f{k}"] = trapz(diff, log_n)
+    diff = []
+    for n in n_vals:
+        ses = intercept_by_n[n]
+        m = sum(ses) / len(ses)
+        b = baseline["mu"][n]
+        diff.append(math.log10(max(m, EPS_LOG) / max(b, EPS_LOG)))
+    per_metric["mu"] = trapz(diff, log_n)
+    return sum(per_metric.values()), per_metric
+
+
 def _mean_std(xs: list[float]) -> tuple[float, float]:
     m = sum(xs) / len(xs)
     v = sum((x - m) ** 2 for x in xs) / max(len(xs) - 1, 1)

@@ -35,6 +35,7 @@ from prepare import (
     SEEDS,
     VAL_SEED_OFFSET,
     aggregate,
+    area_score,
     evaluate,
     format_table,
     hp_for,
@@ -116,15 +117,21 @@ def main():
                                 **evaluate(model, seed, split="test")})
     headline, mspe_by_n_k, intercept_by_n = aggregate(results)
     worst = worst_log_ratio(mspe_by_n_k, intercept_by_n)
+    area_total, area_by = area_score(mspe_by_n_k, intercept_by_n)
     print(format_table(mspe_by_n_k, intercept_by_n))
     print()
-    print(f"score: {worst:.6f}   # max log10(routine_cell/baseline_cell); <0 ⟺ dominates")
-    print(f"# headline: {headline:.6f}   (mean log10 MSPE; for ranking dominators)")
+    print(f"score: {area_total:.6f}   "
+          f"# sum of trapezoidal areas log10(routine/baseline) over log10(n); <0 ⟺ routine area below baseline")
+    print(f"# area_f0: {area_by['f0']:+.6f}   "
+          f"area_f1: {area_by['f1']:+.6f}   "
+          f"area_mu: {area_by['mu']:+.6f}")
+    print(f"# worst_cell: {worst:+.6f}   (max log10(routine/baseline) over 18 cells)")
+    print(f"# headline: {headline:.6f}   (mean log10 MSPE)")
     print(f"# device: {DEVICE}")
     print(f"# wall: {time.time() - t0:.1f}s   "
           f"({len(results)} trainings over {len(N_GRID)} n × {len(SEEDS)} seeds)")
     print(f"# curves: {CURVE_LOG_PATH}")
-    return worst
+    return area_total
 
 
 if __name__ == "__main__":
