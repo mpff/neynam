@@ -12,16 +12,20 @@ stripped to the bare essentials.
 
 - `src/neynam/model.py` — `NAM`: k generic backbones over k inputs, centering.
 - `src/neynam/dataset.py` — `MultiInputDataset`: yields `([x1, ..., xk], y)`.
-- `tests/test_nam_consistency.py` — synthetic 2-component DGP, recovers
-  `f_k` shape under mild thresholds; checks centering invariants.
-
-Out of scope (for now): control variables, post-hoc backfitting, GLM links,
-schedulers, AMP, hyperparameter search, simulation grids, R figures.
+- `prepare.py` — concurvity DGP, val/test split, `evaluate`, `CurveLogger`,
+  `aggregate`, `format_table`, `HP_DEFAULTS`. **Read-only during the
+  autoresearch loop.**
+- `train.py` — the file the loop edits: backbone, optimizer, training loop,
+  early stopping. Prints the `score:` line the loop reads.
+- `tests/test_nam_consistency.py` — sanity test for the NAM mechanics
+  (independent uncorrelated DGP); not a benchmark.
+- `METHOD.md` — DGP one-liner, theory stub, baseline numbers.
 
 ## Commands
 
 ```bash
 pytest tests/
+python train.py        # baseline / loop run; writes runs/curves.tsv
 ```
 
 ## Conventions

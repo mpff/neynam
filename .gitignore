@@ -23,6 +23,10 @@ Rplots.pdf
 results/simulation_images/runs/
 results/simulation_images/hp_search/
 
+# autoresearch / baseline runs — per-invocation TSV curves and bookkeeping
+runs/
+results.tsv
+
 # UKBB / ADNI experiment runs — large checkpoints + per-run artefacts
 experiments/ukbb/runs/
 experiments/adni/runs/

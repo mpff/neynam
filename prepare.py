@@ -2,7 +2,8 @@
 
 DO NOT EDIT during the autoresearch loop. Defines the fixed pieces of the
 benchmark: data generating process, training-size grid, evaluation
-protocol, scoring, and HP defaults loaded from `hp_defaults.json`.
+protocol, scoring, baseline HP defaults (`HP_DEFAULTS`), and the
+per-epoch `CurveLogger`.
 
 Convergence-style evaluation: we sweep `n` over a geometric grid, train a
 fresh model per (n, seed), and report mean log10 MSPE across all
@@ -10,7 +11,6 @@ fresh model per (n, seed), and report mean log10 MSPE across all
 """
 from __future__ import annotations
 
-import json
 import math
 from pathlib import Path
 
@@ -19,44 +19,99 @@ import torch
 N_GRID = [200, 400, 800, 1600, 3200, 6400]
 SEEDS = [0, 1, 2, 3, 4]
 EVAL_N = 2000
-EVAL_SEED_OFFSET = 10_000
+# Held-out draws use disjoint seed offsets so HP-search (val) cannot leak
+# into the final headline (test). Two independent fresh draws per seed.
+VAL_SEED_OFFSET = 10_000
+TEST_SEED_OFFSET = 20_000
 EPS_LOG = 1e-12
 MU_TRUE = 1.0 / 3.0  # E[y] for the DGP in `simulate`
+RHO = 0.7            # Gaussian-copula correlation between x1 and x2 (concurvity)
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-HERE = Path(__file__).parent
-HP_PATH = HERE / "hp_defaults.json"
+# Baseline HPs — classic SGD + cosine LR + early stopping on val y-MSE.
+# A wider sweep ({3e-2, 1e-1, 3e-1, 1.0} × {wd 0, 1e-4} across N_GRID)
+# found lr=0.1 (no weight decay) dominant at every n; constants below.
+HP_DEFAULTS = {"lr": 1e-1, "max_epochs": 500, "patience": 100, "batch_size": 128}
+
+# Baseline curve — mean across 5 seeds at each n, captured from the
+# patience=100 baseline run (commit 0fd9001, score = -1.791). The
+# autoresearch keep/discard rule is cell-wise dominance: a routine is
+# kept iff every one of these 18 cells improves. `score:` reflects
+# the worst-cell log10 ratio vs this baseline; <0 ⟺ dominates.
+BASELINE_CURVE = {
+    "mspe": {
+        200:  {0: 0.4755, 1: 0.0090},
+        400:  {0: 0.4571, 1: 0.0060},
+        800:  {0: 0.4114, 1: 0.0027},
+        1600: {0: 0.2916, 1: 0.0024},
+        3200: {0: 0.0603, 1: 0.0012},
+        6400: {0: 0.0075, 1: 0.0003},
+    },
+    "mu": {
+        200:  0.0029,
+        400:  0.0016,
+        800:  0.0007,
+        1600: 0.0006,
+        3200: 0.0001,
+        6400: 5e-5,  # printed as 0.0000 ± 0.0000; floored for ratio math
+    },
+}
 
 
 def simulate(n: int, seed: int):
-    """Canonical identifiable 2-component DGP.
+    """Concurvity DGP — *asymmetric difficulty + correlated inputs*.
 
-        x1 ~ U[0, 1],   f1(x1) = sin(2π x1)                 (mean 0)
-        x2 ~ U[-1, 1],  f2(x2) = x2^2 - 1/3                 (mean 0)
-        μ  = 1/3,       y = μ + f1 + f2 + ε,  ε ~ N(0, 0.1)
+        (z1, z2) ~ N(0, [[1, ρ], [ρ, 1]]),   ρ = RHO
+        x1 = Φ(z1)            ∈ [0, 1]      (uniform marginal)
+        x2 = 2 Φ(z2) - 1      ∈ [-1, 1]     (uniform marginal)
 
-    Returns (inputs, y, f_true, mu) with each component already
-    population-centered, so MSPE of component k against `f_true[k]`
-    measures shape recovery directly.
+        f1(x1) = sin(8π x1)                 (mean 0, 4 cycles)
+        f2(x2) = x2^2 - 1/3                 (mean 0, smooth)
+        μ  = 1/3,   y = μ + f1 + f2 + ε,    ε ~ N(0, 0.1)
+
+    Marginals are unchanged from the uncorrelated DGP — Var(f_k) and E[f_k]
+    are the same — but x1 and x2 are now coupled via a Gaussian copula
+    (concurvity). The population-best *additive* decomposition is no
+    longer just (f1, f2): naive joint MSE absorbs some of f2's signal
+    into f̂1 and vice versa. MSPE here is computed against the
+    generative (f1, f2) — so the metric rewards routines that
+    *un-confound* the components, e.g. backfitting or Neyman-orthogonal
+    score updates.
+
+    f1 remains the optimization bottleneck (high-frequency, sample-bound);
+    f2 is smooth.
     """
     g = torch.Generator().manual_seed(seed)
-    x1 = torch.rand(n, 1, generator=g)
-    x2 = -1 + 2 * torch.rand(n, 1, generator=g)
-    f1 = torch.sin(2 * math.pi * x1).squeeze(-1)
+    L = math.sqrt(1.0 - RHO ** 2)
+    z = torch.randn(n, 2, generator=g)
+    z1 = z[:, 0]
+    z2 = RHO * z[:, 0] + L * z[:, 1]
+    u1 = 0.5 * (1.0 + torch.erf(z1 / math.sqrt(2.0)))
+    u2 = 0.5 * (1.0 + torch.erf(z2 / math.sqrt(2.0)))
+    x1 = u1.unsqueeze(-1)
+    x2 = (2.0 * u2 - 1.0).unsqueeze(-1)
+    f1 = torch.sin(8 * math.pi * x1).squeeze(-1)
     f2 = (x2 ** 2).squeeze(-1) - 1.0 / 3.0
     mu = torch.tensor(1.0 / 3.0)
     eps = 0.1 * torch.randn(n, generator=g)
     y = mu + f1 + f2 + eps
-    return [x1, x2], y, [f1, f2], mu
+    inputs = [x1.to(DEVICE), x2.to(DEVICE)]
+    return inputs, y.to(DEVICE), [f1.to(DEVICE), f2.to(DEVICE)], mu.to(DEVICE)
 
 
-def evaluate(model, train_seed: int) -> dict:
+def evaluate(model, train_seed: int, *, split: str = "test") -> dict:
     """Evaluate on a fresh held-out draw of size EVAL_N.
+
+    Pass `split="val"` for HP search and any tuning use; `split="test"`
+    for the final headline (default). The two splits use disjoint seed
+    offsets, so HPs cannot leak into the reported score.
 
     Returns:
         mspe          — list of per-component MSPE against the population truth.
         intercept_se  — squared error of model.intercept against MU_TRUE.
     """
-    inputs_te, _, f_true_te, _ = simulate(EVAL_N, train_seed + EVAL_SEED_OFFSET)
+    offset = VAL_SEED_OFFSET if split == "val" else TEST_SEED_OFFSET
+    inputs_te, _, f_true_te, _ = simulate(EVAL_N, train_seed + offset)
     model.eval()
     with torch.no_grad():
         mspe = [
@@ -67,24 +122,71 @@ def evaluate(model, train_seed: int) -> dict:
     return {"mspe": mspe, "intercept_se": intercept_se}
 
 
-def load_hp_defaults() -> dict:
-    return json.loads(HP_PATH.read_text()) if HP_PATH.exists() else {}
+def evaluate_curve(model, inputs_tr, train_seed: int) -> dict:
+    """Mid-training shape-recovery probe on the VAL split — does NOT
+    modify model state.
+
+    Centering during training is normally a one-shot post-hoc step
+    (`model.center(...)` rewrites `means` and `intercept`). For per-epoch
+    curves we instead compute the training-set mean shift on the fly,
+    apply it only for evaluation, and leave the parameters alone. Uses
+    VAL_SEED_OFFSET so the test split stays untouched until the final
+    `evaluate(..., split='test')` call.
+    """
+    inputs_te, _, f_true_te, _ = simulate(EVAL_N, train_seed + VAL_SEED_OFFSET)
+    was_training = model.training
+    model.eval()
+    with torch.no_grad():
+        shifts = [model.component(k, inputs_tr[k]).mean().item()
+                  for k in range(len(f_true_te))]
+        mspe = [
+            ((model.component(k, inputs_te[k]) - shifts[k] - f_true_te[k]) ** 2).mean().item()
+            for k in range(len(f_true_te))
+        ]
+        intercept_eff = model.intercept.item() + sum(shifts)
+        intercept_se = (intercept_eff - MU_TRUE) ** 2
+    if was_training:
+        model.train()
+    return {"mspe": mspe, "intercept_se": intercept_se}
+
+
+class CurveLogger:
+    """Append-only TSV of per-epoch shape recovery curves.
+
+    One row per (n, seed, epoch). Truncates the file on construction so
+    each invocation of `train.py` produces a fresh log; the autoresearch
+    loop relies on this to keep the file bounded.
+    """
+
+    def __init__(self, path):
+        self.path = Path(path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._fh = self.path.open("w")
+        self._fh.write("n\tseed\tepoch\ttrain_mse\tmspe_f0\tmspe_f1\tintercept_se\n")
+        self._fh.flush()
+
+    def log(self, n, seed, epoch, train_mse, model, inputs_tr):
+        ev = evaluate_curve(model, inputs_tr, seed)
+        row = [str(n), str(seed), str(epoch), f"{train_mse:.6g}",
+               *[f"{m:.6g}" for m in ev["mspe"]],
+               f"{ev['intercept_se']:.6g}"]
+        self._fh.write("\t".join(row) + "\n")
+        self._fh.flush()
+
+    def close(self):
+        if not self._fh.closed:
+            self._fh.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        self.close()
 
 
 def hp_for(n: int) -> dict:
-    """HP defaults for a given training-set size.
-
-    Falls back to the nearest-n key in `hp_defaults.json`. If no defaults
-    file exists, returns a conservative built-in.
-    """
-    defaults = load_hp_defaults()
-    if defaults:
-        if str(n) in defaults:
-            return dict(defaults[str(n)])
-        keys = sorted(int(k) for k in defaults)
-        nearest = min(keys, key=lambda k: abs(k - n))
-        return dict(defaults[str(nearest)])
-    return {"lr": 5e-3, "wd": 0.0, "epochs": 100, "batch_size": 128}
+    """HP defaults for a given training-set size — currently constant."""
+    return dict(HP_DEFAULTS)
 
 
 def aggregate(results: list[dict]):
@@ -105,6 +207,61 @@ def aggregate(results: list[dict]):
         intercept_by_n.setdefault(r["n"], []).append(r["intercept_se"])
     headline = sum(logs) / len(logs)
     return headline, mspe_by_n_k, intercept_by_n
+
+
+def worst_log_ratio(mspe_by_n_k, intercept_by_n, baseline=BASELINE_CURVE):
+    """Curve-dominance score — max over 18 cells of log10(routine/baseline).
+
+    Negative ⟺ every (n, component) MSPE *and* every per-n intercept MSE
+    improved over `baseline`. Zero ⟺ matches baseline on at least one
+    cell with none worse. Positive ⟺ at least one cell regressed.
+    """
+    ratios = []
+    for (n, k), mspes in mspe_by_n_k.items():
+        m = sum(mspes) / len(mspes)
+        b = baseline["mspe"][n][k]
+        ratios.append(math.log10(max(m, EPS_LOG) / max(b, EPS_LOG)))
+    for n, ses in intercept_by_n.items():
+        m = sum(ses) / len(ses)
+        b = baseline["mu"][n]
+        ratios.append(math.log10(max(m, EPS_LOG) / max(b, EPS_LOG)))
+    return max(ratios)
+
+
+def area_score(mspe_by_n_k, intercept_by_n, baseline=BASELINE_CURVE):
+    """Curve-area score: trapezoidal integral of
+    log10(routine_mean / baseline_mean) over log10(n), summed across
+    the three metric curves (f0 MSPE, f1 MSPE, μ MSE).
+
+    Negative ⟺ routine has less aggregate log-area than baseline on
+    average across the n grid; one noisy cell can be offset by gains
+    elsewhere. Returns (total, per_metric) where per_metric is
+    {"f0": area, "f1": area, "mu": area}.
+    """
+    n_vals = sorted({n for (n, _) in mspe_by_n_k})
+    log_n = [math.log10(n) for n in n_vals]
+
+    def trapz(ys, xs):
+        return sum(0.5 * (ys[i] + ys[i + 1]) * (xs[i + 1] - xs[i])
+                   for i in range(len(xs) - 1))
+
+    per_metric: dict[str, float] = {}
+    for k in (0, 1):
+        diff = []
+        for n in n_vals:
+            ms = mspe_by_n_k[(n, k)]
+            m = sum(ms) / len(ms)
+            b = baseline["mspe"][n][k]
+            diff.append(math.log10(max(m, EPS_LOG) / max(b, EPS_LOG)))
+        per_metric[f"f{k}"] = trapz(diff, log_n)
+    diff = []
+    for n in n_vals:
+        ses = intercept_by_n[n]
+        m = sum(ses) / len(ses)
+        b = baseline["mu"][n]
+        diff.append(math.log10(max(m, EPS_LOG) / max(b, EPS_LOG)))
+    per_metric["mu"] = trapz(diff, log_n)
+    return sum(per_metric.values()), per_metric
 
 
 def _mean_std(xs: list[float]) -> tuple[float, float]:
