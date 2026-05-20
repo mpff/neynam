@@ -69,6 +69,33 @@ any sensible routine. Promising avenues to explore:
    caps, Fourier-feature input encodings, or output L2 on $f_k''$. Not
    "the answer" but useful baselines to beat.
 
+## Baseline
+
+Classic SGD + cosine LR + early-stop-on-val (HPs from `prepare.HP_DEFAULTS`),
+30 trainings (5 seeds × 6 n), test split (`TEST_SEED_OFFSET = 20_000`).
+
+|     n |        f1 MSPE (mean ± std) |        f2 MSPE (mean ± std) |          μ MSE (mean ± std) |
+|------:|----------------------------:|----------------------------:|----------------------------:|
+|   200 |         0.4826 ± 0.0089     |         0.0098 ± 0.0060     |         0.0019 ± 0.0032     |
+|   400 |         0.4820 ± 0.0068     |         0.0084 ± 0.0046     |         0.0014 ± 0.0021     |
+|   800 |         0.4512 ± 0.0415     |         0.0032 ± 0.0013     |         0.0022 ± 0.0024     |
+|  1600 |         0.2916 ± 0.0398     |         0.0024 ± 0.0006     |         0.0006 ± 0.0008     |
+|  3200 |         0.1087 ± 0.1852     |         0.0012 ± 0.0009     |         0.0005 ± 0.0009     |
+|  6400 |         0.0075 ± 0.0058     |         0.0003 ± 0.0002     |         0.0000 ± 0.0000     |
+
+**Headline:** `score = -1.759` (mean log10 MSPE across all $(n, k, \text{seed})$,
+lower is better). Wall: 447 s on CPU (no GPU in this container).
+
+The hard component $f_1(x_1) = \sin(8\pi x_1)$ shows the expected
+sample-complexity ramp: variance ~0.5 essentially un-recovered at $n = 200, 400$
+(the model collapses to the constant); a clean phase transition between
+$n = 1600$ and $n = 3200$; near-perfect recovery by $n = 6400$. The smooth
+$f_2$ is at noise floor everywhere.
+
+The wide std at $n = 3200$ (0.19 on a 0.11 mean) reflects exactly the
+transition regime — some seeds converge, some don't. This is where new
+routines have the most visible room to improve the headline.
+
 ---
 
 ## Appendix: optimization geometry of NAMs
