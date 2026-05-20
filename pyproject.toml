@@ -3,24 +3,15 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "cocodeel"
-version = "0.2.0"
-description = "Post-hoc backfitting with ridge for additive deep neural networks with control variables"
+name = "neynam"
+version = "0.1.0"
+description = "Minimal neural additive model — testbed for a new NAM optimization routine."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
-authors = [
-    { name = "Manuel Pfeuffer", email = "mnl.pfeuffer@gmail.com" },
-]
-# Runtime deps stay minimal; the dl-mri conda env supplies the heavy stack.
-# Listed here so that `pip install -e .` in a clean env at least surfaces
-# what's needed.
 dependencies = [
     "torch",
     "numpy",
-    "pandas",
-    "scipy",
-    "scikit-learn",
 ]
 
 [project.optional-dependencies]
@@ -28,4 +19,7 @@ test = ["pytest"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
-include = ["cocodeel*"]
+include = ["neynam*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
