@@ -7,6 +7,13 @@ from torch.utils.data import DataLoader
 from neynam import NAM, MultiInputDataset
 
 
+# Population means under the DGP — NOT to be re-estimated from a sample:
+#   x1 ~ U[0, 1]   → E[sin(2π x1)] = 0
+#   x2 ~ U[-1, 1]  → E[x2^2]       = 1/3
+F1_POP_MEAN = 0.0
+F2_POP_MEAN = 1.0 / 3.0
+
+
 def _mlp(in_dim=1, hidden=32):
     return nn.Sequential(
         nn.Linear(in_dim, hidden), nn.ReLU(),
@@ -55,17 +62,21 @@ def test_nam_recovers_additive_components():
         f1_hat = model.component(0, inputs_te[0])
         f2_hat = model.component(1, inputs_te[1])
 
-    # Compare zero-mean shapes to factor out the unidentifiable level.
-    def _center(t):
-        return t - t.mean()
+    # NAM's `component(k, .)` returns f̂_k - μ_k, with μ_k the empirical
+    # train-set mean — an estimator of the population mean of f̂_k.
+    # Truth is centered by the *known population mean*, not the test-sample
+    # mean. The test-sample mean is itself O(1/√n_te) away from the
+    # population mean and would silently absorb estimation bias.
+    f1_true_c = f_true_te[0] - F1_POP_MEAN
+    f2_true_c = f_true_te[1] - F2_POP_MEAN
 
-    mspe_f1 = ((_center(f1_hat) - _center(f_true_te[0])) ** 2).mean().item()
-    mspe_f2 = ((_center(f2_hat) - _center(f_true_te[1])) ** 2).mean().item()
+    mspe_f1 = ((f1_hat - f1_true_c) ** 2).mean().item()
+    mspe_f2 = ((f2_hat - f2_true_c) ** 2).mean().item()
 
     # Noise variance is 0.01 → y-MSE floor ≈ 0.01.
     assert mse_y < 0.05, f"y-MSE too high: {mse_y:.4f}"
-    assert mspe_f1 < 0.05, f"f1 shape MSPE too high: {mspe_f1:.4f}"
-    assert mspe_f2 < 0.05, f"f2 shape MSPE too high: {mspe_f2:.4f}"
+    assert mspe_f1 < 0.05, f"f1 MSPE too high: {mspe_f1:.4f}"
+    assert mspe_f2 < 0.05, f"f2 MSPE too high: {mspe_f2:.4f}"
 
 
 def test_center_is_idempotent_and_prediction_preserving():
