@@ -8,8 +8,13 @@ cocodeel.Rproj
 # Local research library (PDFs, cloned reference repos — kept locally, not versioned)
 research/papers/
 
-# Claude Code local dir (working notes, scheduled tasks, research summaries)
-.claude/
+# Claude Code: track project-shared config (skills, agents, commands,
+# settings.json) but ignore personal/session-local scratch.
+.claude/*
+!.claude/skills/
+!.claude/agents/
+!.claude/commands/
+!.claude/settings.json
 
 # Default R output (e.g. when running R scripts interactively)
 Rplots.pdf
