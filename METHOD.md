@@ -38,6 +38,14 @@ c \;\leftarrow\; c \;+\; \frac{2\eta}{|\mathcal{B}|}
   \sum_{i \in \mathcal{B}} r_i.
 $$
 
+## Directions (keywords only)
+
+- Backfitting / cyclic coordinate updates
+- Neyman orthogonalization / DML
+- Per-component learning rates
+- Functional momentum
+- Smoothness / spectral regularization
+
 ## Baseline
 
 To be regenerated under the current `HP_DEFAULTS` (classic SGD, cosine LR,
