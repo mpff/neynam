@@ -33,6 +33,30 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # found lr=0.1 (no weight decay) dominant at every n; constants below.
 HP_DEFAULTS = {"lr": 1e-1, "max_epochs": 500, "patience": 100, "batch_size": 128}
 
+# Baseline curve — mean across 5 seeds at each n, captured from the
+# patience=100 baseline run (commit 0fd9001, score = -1.791). The
+# autoresearch keep/discard rule is cell-wise dominance: a routine is
+# kept iff every one of these 18 cells improves. `score:` reflects
+# the worst-cell log10 ratio vs this baseline; <0 ⟺ dominates.
+BASELINE_CURVE = {
+    "mspe": {
+        200:  {0: 0.4755, 1: 0.0090},
+        400:  {0: 0.4571, 1: 0.0060},
+        800:  {0: 0.4114, 1: 0.0027},
+        1600: {0: 0.2916, 1: 0.0024},
+        3200: {0: 0.0603, 1: 0.0012},
+        6400: {0: 0.0075, 1: 0.0003},
+    },
+    "mu": {
+        200:  0.0029,
+        400:  0.0016,
+        800:  0.0007,
+        1600: 0.0006,
+        3200: 0.0001,
+        6400: 5e-5,  # printed as 0.0000 ± 0.0000; floored for ratio math
+    },
+}
+
 
 def simulate(n: int, seed: int):
     """Concurvity DGP — *asymmetric difficulty + correlated inputs*.
@@ -183,6 +207,25 @@ def aggregate(results: list[dict]):
         intercept_by_n.setdefault(r["n"], []).append(r["intercept_se"])
     headline = sum(logs) / len(logs)
     return headline, mspe_by_n_k, intercept_by_n
+
+
+def worst_log_ratio(mspe_by_n_k, intercept_by_n, baseline=BASELINE_CURVE):
+    """Curve-dominance score — max over 18 cells of log10(routine/baseline).
+
+    Negative ⟺ every (n, component) MSPE *and* every per-n intercept MSE
+    improved over `baseline`. Zero ⟺ matches baseline on at least one
+    cell with none worse. Positive ⟺ at least one cell regressed.
+    """
+    ratios = []
+    for (n, k), mspes in mspe_by_n_k.items():
+        m = sum(mspes) / len(mspes)
+        b = baseline["mspe"][n][k]
+        ratios.append(math.log10(max(m, EPS_LOG) / max(b, EPS_LOG)))
+    for n, ses in intercept_by_n.items():
+        m = sum(ses) / len(ses)
+        b = baseline["mu"][n]
+        ratios.append(math.log10(max(m, EPS_LOG) / max(b, EPS_LOG)))
+    return max(ratios)
 
 
 def _mean_std(xs: list[float]) -> tuple[float, float]:

@@ -39,6 +39,7 @@ from prepare import (
     format_table,
     hp_for,
     simulate,
+    worst_log_ratio,
 )
 
 CURVE_LOG_PATH = Path(__file__).parent / "runs" / "curves.tsv"
@@ -114,14 +115,16 @@ def main():
                 results.append({"n": n, "seed": seed,
                                 **evaluate(model, seed, split="test")})
     headline, mspe_by_n_k, intercept_by_n = aggregate(results)
+    worst = worst_log_ratio(mspe_by_n_k, intercept_by_n)
     print(format_table(mspe_by_n_k, intercept_by_n))
     print()
-    print(f"score: {headline:.6f}")
+    print(f"score: {worst:.6f}   # max log10(routine_cell/baseline_cell); <0 ⟺ dominates")
+    print(f"# headline: {headline:.6f}   (mean log10 MSPE; for ranking dominators)")
     print(f"# device: {DEVICE}")
     print(f"# wall: {time.time() - t0:.1f}s   "
           f"({len(results)} trainings over {len(N_GRID)} n × {len(SEEDS)} seeds)")
     print(f"# curves: {CURVE_LOG_PATH}")
-    return headline
+    return worst
 
 
 if __name__ == "__main__":
