@@ -1,5 +1,5 @@
 ---
-name: experiment
+name: autoresearch
 description: Drive an autonomous, fixed-time-budget ML research loop. Edit one file (the training script) only, log every run to results.tsv, and advance the branch when the val metric improves / reset it when it doesn't. Use when the user wants to "kick off experiments", "start the autoresearch loop", "run overnight experiments", or asks the agent to do autonomous research. Once the loop begins, do not pause to check in — run until manually interrupted.
 ---
 
