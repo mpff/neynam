@@ -51,11 +51,21 @@ $$
 
 ## Baseline
 
-To be regenerated under the current `HP_DEFAULTS` (classic SGD, cosine LR,
-early-stop-on-val with patience). Headline metric: mean $\log_{10}$ MSPE
-across all $(n, k, \text{seed})$, lower is better. See `train.py` output
-or rerun:
+Classic SGD + cosine LR + early-stop-on-val (HPs from `prepare.HP_DEFAULTS`:
+lr=0.1, max_epochs=500, patience=100, batch=128), 30 trainings (5 seeds ×
+6 n), test split.
 
-```bash
-python train.py
-```
+|     n |        f1 MSPE (mean ± std) |        f2 MSPE (mean ± std) |          μ MSE (mean ± std) |
+|------:|----------------------------:|----------------------------:|----------------------------:|
+|   200 |         0.4755 ± 0.0095     |         0.0090 ± 0.0063     |         0.0029 ± 0.0035     |
+|   400 |         0.4571 ± 0.0208     |         0.0060 ± 0.0022     |         0.0016 ± 0.0016     |
+|   800 |         0.4114 ± 0.0205     |         0.0027 ± 0.0012     |         0.0007 ± 0.0007     |
+|  1600 |         0.2916 ± 0.0398     |         0.0024 ± 0.0006     |         0.0006 ± 0.0008     |
+|  3200 |         0.0603 ± 0.0771     |         0.0012 ± 0.0009     |         0.0001 ± 0.0001     |
+|  6400 |         0.0075 ± 0.0058     |         0.0003 ± 0.0002     |         0.0000 ± 0.0000     |
+
+**Headline:** `score = -1.791` (mean $\log_{10}$ MSPE across all
+$(n, k, \text{seed})$, lower is better). Wall: 594 s on CPU.
+
+(Table uses 1-indexed component labels to match the math; the raw
+`train.py` console output prints them 0-indexed as `f0`, `f1`.)
