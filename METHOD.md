@@ -42,9 +42,12 @@ $$
 
 - Backfitting / cyclic coordinate updates
 - Neyman orthogonalization / DML
+- Cross-fitting
 - Per-component learning rates
 - Functional momentum
 - Smoothness / spectral regularization
+- Muon
+- Shampoo
 
 ## Baseline
 
