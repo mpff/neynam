@@ -175,7 +175,7 @@ def hp_for(n: int) -> dict:
         keys = sorted(int(k) for k in defaults)
         nearest = min(keys, key=lambda k: abs(k - n))
         return dict(defaults[str(nearest)])
-    return {"lr": 1e-1, "wd": 0.0, "max_epochs": 500, "patience": 20, "batch_size": 128}
+    return {"lr": 1e-1, "max_epochs": 500, "patience": 20, "batch_size": 128}
 
 
 def aggregate(results: list[dict]):

@@ -63,7 +63,7 @@ def train_one(n: int, seed: int, logger: CurveLogger | None = None) -> NAM:
         shuffle=True,
     )
     model = NAM([make_backbone(), make_backbone()]).to(DEVICE)
-    opt = torch.optim.SGD(model.parameters(), lr=hp["lr"], weight_decay=hp["wd"])
+    opt = torch.optim.SGD(model.parameters(), lr=hp["lr"])
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=hp["max_epochs"])
 
     best_val = float("inf")

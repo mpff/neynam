@@ -1,10 +1,9 @@
 """One-time HP search for the BASELINE training routine.
 
-Searches (lr, wd) on a small grid at each n in `prepare.N_GRID` using the
+Searches `lr` on a small grid at each n in `prepare.N_GRID` using the
 same recipe as `train.py` (classic SGD + cosine LR + early stopping on
-val y-MSE), picks the combo with the lowest mean per-component MSPE on
-the VAL split across seeds, and writes per-n winners to
-`hp_defaults.json`.
+val y-MSE), picks the lr with the lowest mean per-component MSPE on the
+VAL split across seeds, and writes per-n winners to `hp_defaults.json`.
 
 This is *not* part of the autoresearch loop — it runs once before the
 loop starts so the baseline has a fair starting point. The agent is free
@@ -13,7 +12,6 @@ to override these HPs in `train.py` for any experiment.
 from __future__ import annotations
 
 import copy
-import itertools
 import json
 import time
 
@@ -37,7 +35,6 @@ from prepare import (
 # {3e-2, 1e-1, 3e-1, 1.0} found lr=0.1 dominant at every n ≤ 800 (lr=1.0
 # diverges; lr=3e-2 underfits); narrowed to the two viable rates.
 LR_GRID = [1e-1, 3e-1]
-WD_GRID = [0.0, 1e-4]
 MAX_EPOCHS = 500
 PATIENCE = 20
 BATCH_SIZE = 128
@@ -52,7 +49,7 @@ def _backbone():
     )
 
 
-def _train(n, seed, lr, wd):
+def _train(n, seed, lr):
     torch.manual_seed(seed)
     inputs_tr, y_tr, _, _ = simulate(n, seed)
     inputs_val, y_val, _, _ = simulate(EVAL_N, seed + VAL_SEED_OFFSET)
@@ -62,7 +59,7 @@ def _train(n, seed, lr, wd):
         shuffle=True,
     )
     model = NAM([_backbone(), _backbone()]).to(DEVICE)
-    opt = torch.optim.SGD(model.parameters(), lr=lr, weight_decay=wd)
+    opt = torch.optim.SGD(model.parameters(), lr=lr)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=MAX_EPOCHS)
 
     best_val = float("inf")
@@ -99,24 +96,23 @@ def main():
     best: dict[str, dict] = {}
     for n in N_GRID:
         rows = []
-        for lr, wd in itertools.product(LR_GRID, WD_GRID):
+        for lr in LR_GRID:
             seed_means = []
             for seed in SEARCH_SEEDS:
-                model = _train(n, seed, lr, wd)
+                model = _train(n, seed, lr)
                 mspe = evaluate(model, seed, split="val")["mspe"]
                 seed_means.append(sum(mspe) / len(mspe))
             score = sum(seed_means) / len(seed_means)
-            rows.append(((lr, wd), score))
-            print(f"  n={n:5d}  lr={lr:.0e}  wd={wd:.0e}  mspe={score:.4f}")
-        (best_lr, best_wd), best_score = min(rows, key=lambda r: r[1])
+            rows.append((lr, score))
+            print(f"  n={n:5d}  lr={lr:.0e}  mspe={score:.4f}")
+        best_lr, best_score = min(rows, key=lambda r: r[1])
         best[str(n)] = {
             "lr": best_lr,
-            "wd": best_wd,
             "max_epochs": MAX_EPOCHS,
             "patience": PATIENCE,
             "batch_size": BATCH_SIZE,
         }
-        print(f"  -> n={n}: lr={best_lr}, wd={best_wd}  (mspe={best_score:.4f})")
+        print(f"  -> n={n}: lr={best_lr}  (mspe={best_score:.4f})")
         print()
     HP_PATH.write_text(json.dumps(best, indent=2) + "\n")
     print(f"wrote {HP_PATH}  ({time.time() - t0:.1f}s)   device={DEVICE}")
