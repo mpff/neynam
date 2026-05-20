@@ -33,8 +33,10 @@ from prepare import (
     simulate,
 )
 
-# Classic SGD wants 10–100× higher lr than Adam — sweep an order of magnitude.
-LR_GRID = [3e-2, 1e-1, 3e-1, 1.0]
+# Classic SGD wants 10–100× higher lr than Adam. Previous wider sweep
+# {3e-2, 1e-1, 3e-1, 1.0} found lr=0.1 dominant at every n ≤ 800 (lr=1.0
+# diverges; lr=3e-2 underfits); narrowed to the two viable rates.
+LR_GRID = [1e-1, 3e-1]
 WD_GRID = [0.0, 1e-4]
 MAX_EPOCHS = 500
 PATIENCE = 20
