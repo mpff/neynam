@@ -64,7 +64,7 @@ def main():
             seed_means = []
             for seed in SEARCH_SEEDS:
                 model = _train(n, seed, lr, wd)
-                mspe = evaluate(model, seed)
+                mspe = evaluate(model, seed)["mspe"]
                 seed_means.append(sum(mspe) / len(mspe))
             score = sum(seed_means) / len(seed_means)
             rows.append(((lr, wd), score))

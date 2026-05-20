@@ -66,9 +66,9 @@ def main():
     for n in N_GRID:
         for seed in SEEDS:
             model = train_one(n, seed)
-            results.append({"n": n, "seed": seed, "mspe": evaluate(model, seed)})
-    headline, by_n_k = aggregate(results)
-    print(format_table(by_n_k))
+            results.append({"n": n, "seed": seed, **evaluate(model, seed)})
+    headline, mspe_by_n_k, intercept_by_n = aggregate(results)
+    print(format_table(mspe_by_n_k, intercept_by_n))
     print()
     print(f"score: {headline:.6f}")
     print(f"# wall: {time.time() - t0:.1f}s   "
